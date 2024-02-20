@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# function that prints the usage info
+show_usage() { cat <<EOL
+USAGE:
+	\` ${0##*\/}  <HOST>  <PORT>  [<PROTOCOL> (default: tcp)] \`
+
+SYNOPSIS:
+	Unless altered by [-OPTIONS], ${0##*\/} will attempt to connect to <HOST> on <PORT> over <PROTOCOL>
+	No output will be returned, and the exit code will be that of the attempted connection.
+
+EXAMPLE:
+	\` ${0##*\/} example.com 80 \`
+
+SUPPORTED PROTOCOLS:
+	tcp , udp
+
+OPTIONS:
+	-h, --help         show this helpful usage information.
+	-p, --ping         ping the host before checking port connectivity.
+	-v, --verbose      speak to me, I am listening.
+
+EOL
+}
+
+# initialize global variables
+declare -g QUIET=true PING=false
+
+# function that handles messages with associated exit codes (error messages and usage info)
+# ${@:2}   : messages to print before exiting.
+# $1 (int) : the exit code.
+# * no messages printed unless in -v,--verbose mode.
+give_help() { $QUIET || { (($#>1)) && { echo "${@:2}"$'\n'; echo "Use the \`-h\` or \`--help\` option to review usage information."; } || show_usage ; }; exit ${1:-0} ; }
+
+# parse input
+shopt -s extglob
+for((i=0,a=1;a<=$#;a++)){ case "${!a,,}" in +(\-)@(h)?(elp)) QUIET=false; give_help ;; +(\-)@(p)?(ing)) ((++i)); PING=true ;; +(\-)@(v)?(erbose)) ((++i)); QUIET=false ;; *) continue; esac; }
+
+check_connectivity() {
+	(($#>1)) || give_help 2 "(Err) Must specify a <HOST> and <PORT>"
+	local protocol="${3:-tcp}"
+	[[ "${protocol,,}" == @(tc|ud)p ]] || give_help 3 "Unsupported protocol: '$3'"
+	# Ping first
+	if $PING ; then if ! ping -c 1 "$1" &>/dev/null; then $QUIET || { echo "Ping to '$1' failed. Host might be down."; return 1; }; fi; fi
+	# Attempt to connect to the specified host and port
+	2>/dev/null >"/dev/${protocol,,}/${1}/${2}" &>/dev/null
+	local -i EC=$?
+	$QUIET || { ((EC==0)) && echo "Successfully connected to '${1}:${2}' over ${protocol,,}." || echo "Failed to connect to '${1}:${2}' over '${protocol}'..."; }
+	exit $EC
+}
+
+check_connectivity ${@:i+1}
